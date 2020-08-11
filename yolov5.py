@@ -5,6 +5,7 @@ import numpy as np
 import json
 import xml.etree.cElementTree as ET
 from lxml import etree
+from datetime import datetime
 
 from utils.datasets import LoadImages
 from models.experimental import attempt_load
@@ -158,7 +159,9 @@ class Yolov5():
                     'xmin': min(int(det[i][0]),int(det[i][2])),
                     'xmax': max(int(det[i][0]),int(det[i][2])),
                     'ymin': min(int(det[i][1]),int(det[i][3])),
-                    'ymax': max(int(det[i][1]),int(det[i][3]))
+                    'ymax': max(int(det[i][1]),int(det[i][3])),
+                    'width': max(int(det[i][0]),int(det[i][2])) - min(int(det[i][0]),int(det[i][2])),
+                    'height': max(int(det[i][1]),int(det[i][3])) - min(int(det[i][1]),int(det[i][3])),
                     },
                 'name': self.names[int(c)],
                 'conf': float(det[i][4]),
@@ -176,13 +179,16 @@ class AnnotationWriter():
     def write_udt(self):
         pass
 
+    def write_aws(self, detections, image_shape, img_name, savedir, aws_bucket):
+        pass
+
     def write_labelimg(self, detections, image_shape, img_name, savedir):
         self.write_xml(detections, image_shape, img_name, savedir)
 
-    def write_xml(self, detections, img_shape, img_name, savedir):
+    def write_xml(self, detections, img_shape, img_name, save_dir):
         xml_name = img_name.replace('.jpg', '.xml')
-        if not os.path.isdir(savedir):
-            os.mkdir(savedir)
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
 
         height, width, depth = img_shape
 
@@ -208,8 +214,54 @@ class AnnotationWriter():
         root = etree.fromstring(xml_str)
         xml_str = etree.tostring(root, pretty_print=True)
 
-        save_path = os.path.join(savedir, xml_name)
+        save_path = os.path.join(save_dir, xml_name)
         with open(save_path, 'wb') as _writer:
             _writer.write(xml_str)
 
         return xml_str
+
+
+    def create_manifest(self, aws_bucket, class_map):
+        self.aws_manifest = []
+        self.aws_bucket = aws_bucket
+        self.class_map = class_map
+        self.reversed_class_map = {}
+
+    def append_manifest(self, detections, image_shape, img_name):
+        manifest_entry = {}
+        height, width, depth = image_shape
+        manifest_entry['source-ref'] = f"s3://{self.aws_bucket}/{img_name}"
+        manifest_entry['bounding-box'] = {}
+        manifest_entry['bounding-box']['image_size'] = [
+                {
+                    'width': width,
+                    'height': height,
+                    'depth': depth
+                }
+            ]
+        manifest_entry['bounding-box']['annotations'] = []
+        manifest_entry['bounding-box-metadata'] = {
+                'objects': [],
+                'class-map': {},
+                'type': 'groundtruth/object-detection',
+                'human-annotated': 'no',
+                "creation-date": datetime.now().isoformat()
+            }
+        for obj in detections:
+            coded_label = row['LabelName'] #### https://github.com/sdoloris/retrain_rekognition
+
+            class_id = rawlabel2id[coded_label]
+
+            manifest_entry['bounding-box']['annotations'].append(
+                {
+                    'class_id': class_id,
+                    'left': obj['bnbbox']['xmin'],
+                    'top': obj['bndbox']['ymin'],
+                    'width': obj['bndbox']['width'],
+                    'height': obj['bndbox']['height']
+                }
+            )
+
+    def write_manifest(self, save_dir):
+        with open() as f:
+            pass
