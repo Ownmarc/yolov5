@@ -98,23 +98,24 @@ class Yolov5():
         return batch_output
 
 
-    def predict_from_path_to_path(self, from_path='inference/images/', to_path='output/', draw_bnd_box=False, bndbox_format='labelimg'):
+    def predict_from_path_to_path(self, annotations_format='labelimg', from_path='inference/images/', to_path='output/', draw_bnd_box=False, aws_bucket='annotations', file_name='annotations'):
         dataset = LoadImages(from_path, img_size=self.imgsz)
 
         for path, img, im0s, vid_cap in dataset:
-            if bndbox_format == 'yolo':
+            if annotations_format == 'yolo':
                 #TODO
                 pass
-            elif bndbox_format == 'labelimg':
+            elif annotations_format == 'labelimg':
                 detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list')
                 img_name = os.path.split(path)[-1]
                 self.annotation_writer.write_labelimg(detections, im0s.shape, img_name, to_path)
-            elif bndbox_format == 'udt':
+            elif annotations_format == 'udt':
                 #TODO
                 pass
-            elif bndbox_format == 'aws':
-                #TODO
-                pass
+            elif annotations_format == 'aws':
+                detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list')
+                img_name = os.path.split(path)[-1]
+                self.annotation_writer.append_aws_manifest(detections, im0s.shape, img_name, aws_bucket, to_path, file_name)
 
 
     def send_to_device(self, img_to_send):
@@ -164,6 +165,7 @@ class Yolov5():
                     'height': max(int(det[i][1]),int(det[i][3])) - min(int(det[i][1]),int(det[i][3])),
                     },
                 'name': self.names[int(c)],
+                'class_id': int(c),
                 'conf': float(det[i][4]),
                 'color': self.colors[int(det[i][5])]
                 }
@@ -177,9 +179,6 @@ class AnnotationWriter():
         pass
 
     def write_udt(self):
-        pass
-
-    def write_aws(self, detections, image_shape, img_name, savedir, aws_bucket):
         pass
 
     def write_labelimg(self, detections, image_shape, img_name, savedir):
@@ -199,11 +198,9 @@ class AnnotationWriter():
         ET.SubElement(size, 'height').text = str(height)
         ET.SubElement(size, 'depth').text = str(depth)
         for obj in detections:
-            label = obj['name']
-
             ob = ET.SubElement(annotation, 'object')
             ET.SubElement(ob, 'conf').text = str(obj["conf"])
-            ET.SubElement(ob, 'name').text = label
+            ET.SubElement(ob, 'name').text = obj['name']
             bbox = ET.SubElement(ob, 'bndbox')
             ET.SubElement(bbox, 'xmin').text = str(int(obj['bndbox']['xmin']))
             ET.SubElement(bbox, 'ymin').text = str(int(obj['bndbox']['ymin']))
@@ -215,22 +212,18 @@ class AnnotationWriter():
         xml_str = etree.tostring(root, pretty_print=True)
 
         save_path = os.path.join(save_dir, xml_name)
-        with open(save_path, 'wb') as _writer:
-            _writer.write(xml_str)
+        with open(save_path, 'wb') as writer:
+            writer.write(xml_str)
 
         return xml_str
 
 
-    def create_manifest(self, aws_bucket, class_map):
-        self.aws_manifest = []
-        self.aws_bucket = aws_bucket
-        self.class_map = class_map
-        self.reversed_class_map = {}
-
-    def append_manifest(self, detections, image_shape, img_name):
+    def append_aws_manifest(self, detections, image_shape, img_name, aws_bucket, save_dir, file_name):
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
         manifest_entry = {}
         height, width, depth = image_shape
-        manifest_entry['source-ref'] = f"s3://{self.aws_bucket}/{img_name}"
+        manifest_entry['source-ref'] = f"s3://{aws_bucket}/{img_name}"
         manifest_entry['bounding-box'] = {}
         manifest_entry['bounding-box']['image_size'] = [
                 {
@@ -248,20 +241,18 @@ class AnnotationWriter():
                 "creation-date": datetime.now().isoformat()
             }
         for obj in detections:
-            coded_label = row['LabelName'] #### https://github.com/sdoloris/retrain_rekognition
-
-            class_id = rawlabel2id[coded_label]
-
             manifest_entry['bounding-box']['annotations'].append(
                 {
-                    'class_id': class_id,
-                    'left': obj['bnbbox']['xmin'],
+                    'class_id': obj['class_id'],
+                    'left': obj['bndbox']['xmin'],
                     'top': obj['bndbox']['ymin'],
                     'width': obj['bndbox']['width'],
                     'height': obj['bndbox']['height']
                 }
             )
+            manifest_entry['bounding-box-metadata']['objects'].append({'confidence': obj["conf"]})
+            manifest_entry['bounding-box-metadata']['class-map'][str(obj['class_id'])] = obj['name']
 
-    def write_manifest(self, save_dir):
-        with open() as f:
-            pass
+        save_path = os.path.join(save_dir, f'{file_name}.manifest')
+        with open(save_path, 'a') as writer:
+            writer.write(json.dumps(manifest_entry) + '\n')
