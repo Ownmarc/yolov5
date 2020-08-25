@@ -21,15 +21,26 @@ class UPLOAD(Resource):
     def get(self):
         return 'hello'
     def post(self):
-        content = request.get_json()
-        if "encoded_string" in content.keys() and len(content.keys()) == 1:
-            encoded_string = content["encoded_string"]
+        auth_key = request.headers.get('clash-api-key')
 
-            image_bytes = base64.b64decode(str(encoded_string))
-            img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)
+        if auth == 'xxxxxxxxxxddddddddddtttttttttt12345': 
+            content = request.get_json()
+            if "encoded_string" in content.keys() and len(content.keys()) == 1:
+                try:
+                    encoded_string = content["encoded_string"]
 
-            detections = yolov5.predict(img_np)
+                    image_bytes = base64.b64decode(str(encoded_string))
+                    img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)
 
-            return jsonify({"img_objects": detections})
+                    detections = yolov5.predict(img_np)
+
+                    return jsonify({"img_objects": detections}), 200
+                except Exception as e:
+                    print(e)
+                    return jsonify({"message": "ERROR: Can't process data"}), 422
+            else:
+                return jsonify({"message": "ERROR: Invalid POST request"}), 400
+
         else:
-            abort(400, error="Invalid POST request")
+                return jsonify({"message": "Unauthorized"}), 401
+        

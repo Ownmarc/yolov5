@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+import copy
 
 import json
 import xml.etree.cElementTree as ET
@@ -56,7 +57,7 @@ class Yolov5():
         _ = self.model(img.half() if self.half else img)  # run once
 
 
-    def predict(self, img0, img=None, draw_bndbox=False, bndbox_format='min_max_list'):
+    def predict(self, img0, img=None, draw_bndbox=False, bndbox_format='min_max_list', max_objects=None):
         if img is None:
             img = self.send_whatever_to_device(img0)
         else:
@@ -77,10 +78,13 @@ class Yolov5():
 
         if bndbox_format == 'min_max_list':
             min_max_list = self.min_max_list(det)
+            if max_objects != None:
+                min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
+            
             return min_max_list
 
 
-    def predict_batch(self, img0s, draw_bndbox=False, bndbox_format='min_max_list'):
+    def predict_batch(self, img0s, draw_bndbox=False, bndbox_format='min_max_list', max_objects=None):
 
         imgs = self.send_whatever_to_device(img0s)
 
@@ -93,12 +97,17 @@ class Yolov5():
 
         batch_output = []
         for pred in preds:
-            batch_output.append(self.min_max_list(pred))
+            min_max_list = self.min_max_list(pred)
+            if max_objects != None:
+                min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
+
+            batch_output.append(min_max_list)
 
         return batch_output
 
 
-    def predict_from_path_to_path(self, annotations_format='labelimg', from_path='inference/images/', to_path='output/', draw_bnd_box=False, aws_bucket='annotations', file_name='annotations'):
+    def predict_from_path_to_path(self, annotations_format='labelimg', from_path='inference/images/', to_path='output/', 
+                                draw_bnd_box=False, aws_bucket='annotations', file_name='annotations', max_objects=None):
         dataset = LoadImages(from_path, img_size=self.imgsz)
 
         for path, img, im0s, vid_cap in dataset:
@@ -106,14 +115,14 @@ class Yolov5():
                 #TODO
                 pass
             elif annotations_format == 'labelimg':
-                detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list')
+                detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list', max_objects=max_objects)
                 img_name = os.path.split(path)[-1]
                 self.annotation_writer.write_labelimg(detections, im0s.shape, img_name, to_path)
             elif annotations_format == 'udt':
                 #TODO
                 pass
             elif annotations_format == 'aws':
-                detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list')
+                detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list', max_objects=max_objects)
                 img_name = os.path.split(path)[-1]
                 self.annotation_writer.append_aws_manifest(detections, im0s.shape, img_name, aws_bucket, to_path, file_name)
 
@@ -172,6 +181,22 @@ class Yolov5():
             min_max_list.append(obj)
 
         return min_max_list
+
+
+    def max_objects_filter(self, min_max_list, max_dict, by='name'):
+        filtered_list = []
+        max_dict_copy = copy.deepcopy(max_dict)
+        for obj in min_max_list:
+            if max_dict_copy[obj[by]] > 0:
+                max_dict_copy[obj[by]] -= 1
+                filtered_list.append(obj)
+            else:
+                print(f"rejected {obj[by]} conf {obj['conf']}")
+
+        return filtered_list
+
+
+
 
 
 class AnnotationWriter():
