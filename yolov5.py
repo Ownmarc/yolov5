@@ -87,7 +87,7 @@ class Yolov5():
         with torch.no_grad():
             # Run model
             inf_out, _ = self.model(imgs, augment=self.augment)  # inference and training outputs
-
+            
             # Run NMS
             preds = non_max_suppression(inf_out, conf_thres=self.conf_thres, iou_thres=self.iou_thres)
 
