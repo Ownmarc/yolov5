@@ -18,8 +18,8 @@ import torch
 import torch.nn as nn
 import torchvision
 import yaml
-from scipy.cluster.vq import kmeans
-from scipy.signal import butter, filtfilt
+#from scipy.cluster.vq import kmeans
+#from scipy.signal import butter, filtfilt
 from tqdm import tqdm
 
 from utils.torch_utils import init_seeds, is_parallel
