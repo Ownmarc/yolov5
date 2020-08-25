@@ -57,13 +57,13 @@ class UPLOAD(Resource):
 
                     detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
 
-                    return jsonify({"img_objects": detections}), 200
+                    return make_response(jsonify({"img_objects": detections}), 200)
                 except Exception as e:
                     print(e)
-                    return jsonify({"message": "ERROR: Can't process data"}), 422
+                    return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
             else:
-                return jsonify({"message": "ERROR: Invalid POST request"}), 400
+                return make_response(jsonify({"message": "ERROR: Invalid POST request"}), 400)
 
         else:
-                return jsonify({"message": "Unauthorized"}), 401
+            return make_response(jsonify({"message": "Unauthorized"}), 401)
         
