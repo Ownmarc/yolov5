@@ -16,12 +16,15 @@ from utils.torch_utils import select_device
 
 
 class Yolov5():
-    def __init__(self, weights_path, device='', img_size=640, conf_thres=0.4, iou_thres=0.5, augment=False, agnostic_nms=False, classes=None):
+    def __init__(self, weights_path, device='', img_size=640, conf_thres=0.4, iou_thres=0.5, augment=False, agnostic_nms=False, classes=None, colors=None):
         self.device = select_device(device)
         self.weights_name = os.path.split(weights_path)[-1]
         self.model = attempt_load(weights_path, map_location=self.device)
         self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
-        self.colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in range(len(self.names))]
+        if colors == None:
+            self.colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in range(len(self.names))]
+        else:
+            self.colors = colors
         self.imgsz = check_img_size(img_size, s=self.model.stride.max())
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres

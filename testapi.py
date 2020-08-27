@@ -12,6 +12,10 @@ img64_bytes = base64.b64encode(image)
 img64_string = img64_bytes.decode('utf-8')
 post_data = {'encoded_string': img64_string}
 
+print(img64_string)
+
+raise
+
 timeit = time.time()
 valid_response = requests.get(f'{API}/upload', json=post_data)
 print(valid_response.text)
