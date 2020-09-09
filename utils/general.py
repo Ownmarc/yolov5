@@ -12,8 +12,8 @@ from sys import platform
 
 import cv2
 import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.use('Agg') 
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt 
 import numpy as np
 import torch
 import torch.nn as nn
