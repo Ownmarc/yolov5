@@ -81,10 +81,12 @@ class Yolov5():
 
         if bndbox_format == 'min_max_list':
             min_max_list = self.min_max_list(det)
-            if max_objects != None:
+            if min_max_list != None:
                 min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
             
-            return min_max_list
+                return min_max_list
+            else:
+                return None
 
 
     def predict_batch(self, img0s, draw_bndbox=False, bndbox_format='min_max_list', max_objects=None):
@@ -101,7 +103,7 @@ class Yolov5():
         batch_output = []
         for pred in preds:
             min_max_list = self.min_max_list(pred)
-            if max_objects != None:
+            if min_max_list != None:
                 min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
 
             batch_output.append(min_max_list)
@@ -119,15 +121,17 @@ class Yolov5():
                 pass
             elif annotations_format == 'labelimg':
                 detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list', max_objects=max_objects)
-                img_name = os.path.split(path)[-1]
-                self.annotation_writer.write_labelimg(detections, im0s.shape, img_name, to_path)
+                if detections != None:
+                    img_name = os.path.split(path)[-1]
+                    self.annotation_writer.write_labelimg(detections, im0s.shape, img_name, to_path)
             elif annotations_format == 'udt':
                 #TODO
                 pass
             elif annotations_format == 'aws':
                 detections = self.predict(im0s, img, draw_bndbox=draw_bnd_box, bndbox_format='min_max_list', max_objects=max_objects)
-                img_name = os.path.split(path)[-1]
-                self.annotation_writer.append_aws_manifest(detections, im0s.shape, img_name, aws_bucket, to_path, file_name)
+                if detections != None:
+                    img_name = os.path.split(path)[-1]
+                    self.annotation_writer.append_aws_manifest(detections, im0s.shape, img_name, aws_bucket, to_path, file_name)
 
 
     def send_to_device(self, img_to_send):
@@ -166,24 +170,28 @@ class Yolov5():
 
     def min_max_list(self, det):
         min_max_list = []
-        for i, c in enumerate(det[:, -1]):
-            obj = {
-                'bndbox': {
-                    'xmin': min(int(det[i][0]),int(det[i][2])),
-                    'xmax': max(int(det[i][0]),int(det[i][2])),
-                    'ymin': min(int(det[i][1]),int(det[i][3])),
-                    'ymax': max(int(det[i][1]),int(det[i][3])),
-                    'width': max(int(det[i][0]),int(det[i][2])) - min(int(det[i][0]),int(det[i][2])),
-                    'height': max(int(det[i][1]),int(det[i][3])) - min(int(det[i][1]),int(det[i][3])),
-                    },
-                'name': self.names[int(c)],
-                'class_id': int(c),
-                'conf': float(det[i][4]),
-                'color': self.colors[int(det[i][5])]
-                }
-            min_max_list.append(obj)
+        if det != None:
+            for i, c in enumerate(det[:, -1]):
+                obj = {
+                    'bndbox': {
+                        'xmin': min(int(det[i][0]),int(det[i][2])),
+                        'xmax': max(int(det[i][0]),int(det[i][2])),
+                        'ymin': min(int(det[i][1]),int(det[i][3])),
+                        'ymax': max(int(det[i][1]),int(det[i][3])),
+                        'width': max(int(det[i][0]),int(det[i][2])) - min(int(det[i][0]),int(det[i][2])),
+                        'height': max(int(det[i][1]),int(det[i][3])) - min(int(det[i][1]),int(det[i][3])),
+                        },
+                    'name': self.names[int(c)],
+                    'class_id': int(c),
+                    'conf': float(det[i][4]),
+                    'color': self.colors[int(det[i][5])]
+                    }
+                min_max_list.append(obj)
 
-        return min_max_list
+            return min_max_list
+
+        else:
+            return None
 
 
     def max_objects_filter(self, min_max_list, max_dict, by='name'):

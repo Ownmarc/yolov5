@@ -1,1 +1,1 @@
-python train.py --data data/clash.yaml --hyp data/hyp-clash.yaml --weights weights/yolov5x.pt --batch 8 --epochs 300 --img-size 640 --device 1
+python train.py --weights weights/yolov5s.pt --data data/clash.yaml --batch-size 8 --img-size 608 --hyp data/hyp-clash.yaml --epochs 300
