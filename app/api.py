@@ -99,25 +99,25 @@ class BURNTBASE(Resource):
         if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345':
             content = request.get_json()
             if "encoded_string" in content.keys() and len(content.keys()) == 1:
-                #try:
-                encoded_string = content["encoded_string"]
+                try:
+                    encoded_string = content["encoded_string"]
 
-                image_bytes = base64.b64decode(str(encoded_string))
-                img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)[:,:,:3]
-                cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
+                    image_bytes = base64.b64decode(str(encoded_string))
+                    img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)[:,:,:3]
+                    cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
 
-                print(img_np.shape)
+                    print(img_np.shape)
 
-                detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
+                    detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
 
-                height, width, _ = img_np.shape
+                    height, width, _ = img_np.shape
 
-                resp = img_objects_to_formated_json(detections, width, height)
+                    resp = img_objects_to_formated_json(detections, width, height)
 
-                return make_response(jsonify(resp), 200)
-                #except Exception as e:
-                    #print(e)
-                    #return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
+                    return make_response(jsonify(resp), 200)
+                except Exception as e:
+                    print(e)
+                    return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
             else:
                 return make_response(jsonify({"message": "ERROR: Invalid POST request"}), 400)
 
