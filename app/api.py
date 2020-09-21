@@ -105,7 +105,8 @@ class BURNTBASE(Resource):
                     image_bytes = base64.b64decode(str(encoded_string))
                     img_from_buf = np.frombuffer(image_bytes, np.uint8)
                     img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
-                    cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
+                    #cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
+                    cv2.imwrite(f'~/clash_yolo/data/burntbase/{time.time()}.jpg', img_np)
 
                     print(img_np.shape)
 
