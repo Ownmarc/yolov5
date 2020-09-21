@@ -103,7 +103,8 @@ class BURNTBASE(Resource):
                     encoded_string = content["encoded_string"]
 
                     image_bytes = base64.b64decode(str(encoded_string))
-                    img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)[:,:,:3]
+                    img_from_buf = np.frombuffer(image_bytes, np.uint8)
+                    img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
                     cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
 
                     print(img_np.shape)
@@ -160,6 +161,8 @@ def img_objects_to_formated_json(img_objects, img_width, img_height):
         th_level = 12
     elif th_level_dict['eagle'] >= 1 or th_level_dict['warden'] >= 1:
         th_level = 11
+    else:
+        th_level = 10
 
     if th_level == None:
         print('Not able to infer th level of file ')
@@ -195,10 +198,15 @@ def img_objects_to_formated_json(img_objects, img_width, img_height):
         if obj['name'] in pos_dict:
             pos_dict[obj['name']]['positions'].append({
                 "xPercent":round(((obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2-xmin)/base_width, 14),
-                "yPercent":round(((obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2-ymin)/base_height, 14)
+                "yPercent":round(((obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2-ymin)/base_height, 14),
+                "xMinPercent":round((obj['bndbox']['xmin']-xmin)/base_width, 14),
+                "yMinPercent":round((obj['bndbox']['ymin']-ymin)/base_height, 14),
+                "xMaxPercent":round((obj['bndbox']['xmax']-xmin)/base_width, 14),
+                "yMaxPercent":round((obj['bndbox']['ymax']-ymin)/base_height, 14)
             })
 
     json_dict = {
+        'th_level': th_level,
         'coord': {
             'ad':{
                 "positions": pos_dict['air_def']['positions'],

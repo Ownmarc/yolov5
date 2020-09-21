@@ -202,7 +202,8 @@ class Yolov5():
                 max_dict_copy[obj[by]] -= 1
                 filtered_list.append(obj)
             else:
-                print(f"rejected {obj[by]} conf {obj['conf']}")
+                pass
+                #print(f"rejected {obj[by]} conf {obj['conf']}")
 
         return filtered_list
 
