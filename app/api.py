@@ -7,12 +7,29 @@ import json
 import base64
 import os
 import time
-import time
 import datetime
 import cv2
 import numpy as np
 
 from yolov5 import Yolov5
+
+try:
+    with open("creds.json") as f:
+        s3_creds = json.load(f)
+
+    import boto3
+    import youtube_dl
+    from datetime import datetime
+    from io import BytesIO
+    import pandas as pd
+
+    s3 = boto3.client('s3',
+    aws_access_key_id=s3_creds["aws_access_key_id"],
+    aws_secret_access_key=s3_creds["aws_secret_access_key"])
+
+except FileNotFoundError:
+    print('vidscan not running')
+    
 
 max_per_class_dict = {'gold_mine': 7, 
                       'elx_mine': 7,
@@ -63,7 +80,46 @@ clash_colors = [[255,255,255],
                 [153,0,0],
                 [255,255,0]]
 
-yolov5 = Yolov5('clash_weights/best.pt', device='0', conf_thres=0.5, colors=clash_colors)
+war_buildings_of_interest = ['th',
+                      'eagle', 
+                      'air_def',
+                      'inferno' ,
+                      'xbow',
+                      'wiz_tower' ,
+                      'air_sweeper',
+                      'queen' ,
+                      'king' ,
+                      'warden' ,
+                      'cc',
+                      'scatter',
+                      'champ']
+
+
+any_buildings_of_interest = ['gold_mine',
+                            'elx_mine',
+                            'dark_mine',
+                            'th',
+                            'eagle',
+                            'air_def',
+                            'inferno',
+                            'xbow',
+                            'wiz_tower',
+                            'bomb_tower',
+                            'air_sweeper',
+                            'cannon',
+                            'mortar',
+                            'archer_tower',
+                            'queen',
+                            'king',
+                            'warden',
+                            'gold_storage',
+                            'elx_storage',
+                            'dark_storage',
+                            'cc',
+                            'scatter',
+                            'champ']
+
+yolov5 = Yolov5('clash_weights/best.pt', img_size=800, device='0', conf_thres=0.7, colors=clash_colors)
 
 class UPLOAD(Resource):
     def get(self):
@@ -71,7 +127,7 @@ class UPLOAD(Resource):
     def post(self):
         auth_key = request.headers.get('clash-api-key')
 
-        if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345': 
+        if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345' or "pyjHNAYVWY4484TqlGqLYGAyiUsYFWcX": 
             content = request.get_json()
             if "encoded_string" in content.keys() and len(content.keys()) == 1:
                 try:
@@ -96,7 +152,7 @@ class BURNTBASE(Resource):
     def post(self):
         auth_key = request.headers.get('clash-api-key')
 
-        if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345':
+        if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345' or "pyjHNAYVWY4484TqlGqLYGAyiUsYFWcX":
             content = request.get_json()
             if "encoded_string" in content.keys() and len(content.keys()) == 1:
                 try:
@@ -106,9 +162,7 @@ class BURNTBASE(Resource):
                     img_from_buf = np.frombuffer(image_bytes, np.uint8)
                     img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
                     #cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
-                    cv2.imwrite(f'/home/marcnano/clash_yolo/data/burntbase/{time.time()}.jpg', img_np)
-
-                    print(img_np.shape)
+                    #cv2.imwrite(f'/home/marcnano/clash_yolo/data/burntbase/{time.time()}.jpg', img_np)
 
                     detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
 
@@ -126,6 +180,157 @@ class BURNTBASE(Resource):
         else:
             return make_response(jsonify({"message": "Unauthorized"}), 401)
 
+
+class VIDSCAN(Resource):
+    def post(self):
+        auth_key = request.headers.get('clash-api-key')
+
+        if auth_key == 'xxxxxxxxxxddddddddddtttttttttt12345' or "pyjHNAYVWY4484TqlGqLYGAyiUsYFWcX":
+            content = request.get_json()
+            if "youtube_url" in content.keys() and len(content.keys()) == 1:
+                try:
+                    youtube_url = content["youtube_url"]
+
+                    resp = process_video_from_path(youtube_url)
+
+                    return make_response(jsonify(resp), 200)
+                except Exception as e:
+                    print(e)
+                    try:
+                        os.remove('F:/yolov5/current.mp4')
+                    except:
+                        pass
+                    try:
+                        os.remove('F:/yolov5/current.part')
+                    except:
+                        pass
+
+                    return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
+            else:
+                return make_response(jsonify({"message": "ERROR: Invalid POST request"}), 400)
+
+        else:
+            return make_response(jsonify({"message": "Unauthorized"}), 401)
+
+def process_video_from_path(url):
+    filename = 'F:/yolov5/current.mp4'
+    
+    ydl_opts = {
+        "cookiefile":"cookies.txt",
+        'outtmpl': filename
+    }
+    
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+
+    videoFile = filename
+    vidcap = cv2.VideoCapture(videoFile)
+    success,image = vidcap.read()
+
+    seconds = 1
+    fps = vidcap.get(cv2.CAP_PROP_FPS) # Gets the frames per second
+    multiplier = fps * seconds
+
+    timestamp = 0
+    wanted_frame = round(multiplier * timestamp)
+    data = []
+    img_dict={}
+    while success:
+
+        frameId = int(round(vidcap.get(1))) #current frame number, rounded b/c sometimes you get frame intervals which aren't integers...this adds a little imprecision but is likely good enough
+        success, image = vidcap.read()
+
+        if frameId == wanted_frame+1:
+            war_buildings_of_interest_current_count = 0
+            any_buildings_of_interest_current_count = 0
+            try:
+                detections = yolov5.predict(image, max_objects=max_per_class_dict)
+            except Exception:
+                detections = []
+            if detections:
+                for obj in detections:
+                    if obj['name'] in war_buildings_of_interest:
+                        war_buildings_of_interest_current_count += 1
+                    if obj['name'] in any_buildings_of_interest:
+                        any_buildings_of_interest_current_count += 1
+            print(f'{timestamp}s ', round(war_buildings_of_interest_current_count/27, 3), '    ', round(any_buildings_of_interest_current_count/74, 3))
+            moy = ((war_buildings_of_interest_current_count/27 + any_buildings_of_interest_current_count/74)/2) * (100_000+timestamp)/100_000
+            if moy > 0.8:
+                img_dict[str(int(timestamp))] = image
+
+            data.append({'second':int(timestamp),
+                        'war_build_perct':round(war_buildings_of_interest_current_count/27, 3),
+                        'any_build_perct':round(any_buildings_of_interest_current_count/74, 3)
+                        }, )
+            timestamp += 1
+            wanted_frame = round(multiplier * timestamp)
+
+    vidcap.release()
+    df = pd.DataFrame(data, columns=['second', 'war_build_perct', 'any_build_perct'])
+
+    high_moy = []
+    what_to_return = []
+    for row in df.values:
+        moy = ((row[1]+row[2])/2) * (100_000+row[0])/100_000
+        if moy > 0.8:
+            high_moy.append((int(row[0]), moy))
+            ok_6_8 = False
+            ok_3_6 = False
+            ok_1_3 = False
+        if 0.6 < moy < 0.8:
+            ok_6_8 = True
+        if 0.3 < moy < 0.6:
+            ok_3_6 = True
+        if 0.1 < moy < 0.3:
+            ok_1_3 = True
+        if moy < 0.07 and len(high_moy) > 0:
+            if ok_6_8 and ok_3_6 and ok_1_3:
+                max_tup = max(high_moy, key=lambda x:x[1])
+                name = '--%02d--%02d--%02d' % (int(max_tup[0]//3600), int(max_tup[0]//60)-int(max_tup[0]//3600)*60, int(max_tup[0]%60))
+                name = name.replace('--', '%')
+                try:
+                    s3_file_name = image_to_s3(img_dict[str(max_tup[0])])
+                    interesting = {}
+                    interesting['timestamp_sec'] = max_tup[0]
+                    interesting['is_triple'] = True
+                    interesting["frame_url"] = s3_file_name
+                    what_to_return.append(interesting)
+                    
+                    #cv2.imwrite(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg', img_dict[str(max_tup[0])])
+                    
+                except KeyError:
+                    print(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg')
+                high_moy = []
+                ok_6_8 = False
+                ok_3_6 = False
+                ok_1_3 = False
+            else:
+                high_moy = []
+                ok_6_8 = False
+                ok_3_6 = False
+                ok_1_3 = False
+
+    try:
+        os.remove('F:/yolov5/current.mp4')
+    except:
+        pass
+                
+    return what_to_return
+
+def image_to_s3(img, filename=None, bucket_name="images.burntbase.com", key_prefix="img/marc"):
+    if filename==None:
+        filename = f"videocapture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+    aws_filename = f"{key_prefix}/{filename}"
+    _, buffer = cv2.imencode(".jpg", img)
+    io_buf = BytesIO(buffer)
+    s3.upload_fileobj(
+        Fileobj=io_buf, 
+        Bucket=bucket_name, 
+        Key=aws_filename,
+        ExtraArgs={'ACL':'public-read'})
+    
+    frame_s3_url = f'https://s3.amazonaws.com/{bucket_name}/{key_prefix}/{filename}'
+    return frame_s3_url
 
 def img_objects_to_formated_json(img_objects, img_width, img_height):
   
