@@ -60,7 +60,8 @@ clash_colors = [[255,255,255],
                 [255,255,0],
                 [255,255,255]]
 
-weights_path = 'runs/exp32/weights/best.pt'
+#weights_path = 'runs/exp32/weights/best.pt'
+weights_path = 'clash_weights/best.pt'
 
 redisClient = redis.StrictRedis(host='localhost', port=6379, db=0)
 
