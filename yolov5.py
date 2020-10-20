@@ -81,12 +81,10 @@ class Yolov5():
 
         if bndbox_format == 'min_max_list':
             min_max_list = self.min_max_list(det)
-            if min_max_list != None:
+            if min_max_list != None and max_objects != None:
                 min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
             
-                return min_max_list
-            else:
-                return None
+            return min_max_list
 
 
     def predict_batch(self, img0s, draw_bndbox=False, bndbox_format='min_max_list', max_objects=None):
@@ -103,9 +101,9 @@ class Yolov5():
         batch_output = []
         for det, img0, img in zip(preds, img0s, imgs):
             if det is not None and len(det):
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img0.shape).round()
+                det[:, :4] = scale_coords(img.shape[1:], det[:, :4], img0.shape).round()
             min_max_list = self.min_max_list(det)
-            if min_max_list != None:
+            if min_max_list != None and max_objects != None:
                 min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
 
             batch_output.append(min_max_list)
