@@ -60,7 +60,7 @@ clash_colors = [[255,255,255],
                 [255,255,0],
                 [255,255,255]]
 
-#weights_path = 'runs/exp32/weights/best.pt'
+#weights_path = 'runs/exp33/weights/best.pt'
 weights_path = 'clash_weights/best.pt'
 
 redisClient = redis.StrictRedis(host='localhost', port=6379, db=0)
@@ -69,27 +69,51 @@ yolov5 = Yolov5(weights_path, img_size=800, device='0', conf_thres=0.7, colors=c
 
 
 while True:
-    if redisClient.llen('img_list') > 0:
-        time_now = time.time()
-        keys = []
-        batch = []
-        while len(batch) < 30 and redisClient.llen('img_list') != 0:
-            data = json.loads(redisClient.lpop('img_list').decode('utf8'))
-            key = list(data.keys())[0]
-            encoded_string = data[key]
+    try:
+        if redisClient.llen('img_list') > 0:
+            time_now = time.time()
+            keys = []
+            batch = []
+            while len(batch) < 4 and redisClient.llen('img_list') != 0:
+                key = ''
+                try:
+                    data = json.loads(redisClient.lpop('img_list').decode('utf8'))
+                    key = list(data.keys())[0]
+                    encoded_string = data[key]
 
-            image_bytes = base64.b64decode(str(encoded_string))
-            img_from_buf = np.frombuffer(image_bytes, np.uint8)
-            img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
+                    image_bytes = base64.b64decode(str(encoded_string))
+                    img_from_buf = np.frombuffer(image_bytes, np.uint8)
+                    img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
 
-            batch.append(img_np)
-            keys.append(key)
-        
-        pred_time = time.time()
-        batch_detections = yolov5.predict_batch(batch, max_objects=max_per_class_dict)
+                    batch.append(img_np)
+                    keys.append(key)
+                    
+                except Exception:
+                    payload = {
+                    'status':'error'
+                    }
+                    redisClient.setex(str(key), timedelta(minutes=1), value=json.dumps(payload))
+                    continue
+            
+            
+            if len(batch) > 0:
+                pred_time = time.time()
+                batch_detections = yolov5.predict_batch(batch, max_objects=max_per_class_dict)
 
-        for key, detections in zip(keys, batch_detections):
-            redisClient.setex(str(key), timedelta(minutes=1), value=json.dumps(detections))
-        print(f'processed batch of {len(batch)} images in {time.time()-time_now} seconds - predict time : {time.time()-pred_time} seconds')
-    else:
+                for key, detections, img in zip(keys, batch_detections, batch):
+                    height, width, _ = img.shape
+                    payload = {
+                        'status':'success',
+                        'height':height,
+                        'width':width,
+                        'detections':detections
+                    }
+                    redisClient.setex(str(key), timedelta(minutes=1), value=json.dumps(payload))
+                print(f'processed batch of {len(batch)} images in {time.time()-time_now} seconds')
+        else:
+            time.sleep(0.05)   
+
+    except Exception as e:
+        print(e)
         time.sleep(0.05)
+        continue

@@ -2,58 +2,11 @@
 from app import app
 from flask import request, jsonify, session, make_response
 from flask_restful import abort, Resource
-from functools import wraps
 import json
 import base64
-import os
 import time
-import datetime
-import cv2
-import numpy as np
-
-from yolov5 import Yolov5
-
-try:
-    with open("creds.json") as f:
-        s3_creds = json.load(f)
-
-    import boto3
-    import youtube_dl
-    from datetime import datetime
-    from io import BytesIO
-    import pandas as pd
-
-    s3 = boto3.client('s3',
-    aws_access_key_id=s3_creds["aws_access_key_id"],
-    aws_secret_access_key=s3_creds["aws_secret_access_key"])
-
-except FileNotFoundError:
-    print('vidscan not running')
-    
-
-max_per_class_dict = {'gold_mine': 7, 
-                      'elx_mine': 7,
-                      'dark_mine': 3, 
-                      'th': 1, 
-                      'eagle': 1, 
-                      'air_def': 4, 
-                      'inferno': 3, 
-                      'xbow': 4, 
-                      'wiz_tower': 5, 
-                      'bomb_tower': 2, 
-                      'air_sweeper': 2, 
-                      'cannon': 7, 
-                      'mortar': 4, 
-                      'archer_tower': 8, 
-                      'queen': 1, 
-                      'king': 1, 
-                      'warden': 1, 
-                      'gold_storage': 4, 
-                      'elx_storage': 4, 
-                      'dark_storage': 1, 
-                      'cc': 1,
-                      'scatter':2,
-                      'champ':1}
+import random
+import redis
 
 clash_colors = [[255,255,255],
                 [240,163,255],
@@ -78,7 +31,61 @@ clash_colors = [[255,255,255],
                 [0,153,143],
                 [116,10,255],
                 [153,0,0],
-                [255,255,0]]
+                [255,255,0],
+                [255,255,255]]
+
+try:
+    with open("app/creds.json") as f:
+        s3_creds = json.load(f)
+
+    import boto3
+    import youtube_dl
+    import os
+    from datetime import datetime
+    from io import BytesIO
+    import pandas as pd
+    import cv2
+    from yolov5 import Yolov5
+
+    s3 = boto3.client('s3',
+    aws_access_key_id=s3_creds["aws_access_key_id"],
+    aws_secret_access_key=s3_creds["aws_secret_access_key"])
+
+    weights_path = 'runs/exp33/weights/best.pt'
+
+    yolov5 = Yolov5(weights_path, img_size=800, device='0', conf_thres=0.7, colors=clash_colors)
+
+except FileNotFoundError:
+    print('vidscan not running')
+    weights_path = 'clash_weights/best.pt'
+
+redisClient = redis.StrictRedis(host='localhost', port=6379, db=0)
+    
+
+max_per_class_dict = {'gold_mine': 7, 
+                      'elx_mine': 7,
+                      'dark_mine': 3, 
+                      'th': 1, 
+                      'eagle': 1, 
+                      'air_def': 4, 
+                      'inferno': 3, 
+                      'xbow': 4, 
+                      'wiz_tower': 5, 
+                      'bomb_tower': 2, 
+                      'air_sweeper': 2, 
+                      'cannon': 7, 
+                      'mortar': 4, 
+                      'archer_tower': 8, 
+                      'queen': 1, 
+                      'king': 1, 
+                      'warden': 1, 
+                      'gold_storage': 4, 
+                      'elx_storage': 4, 
+                      'dark_storage': 1, 
+                      'cc': 1,
+                      'scatter':2,
+                      'champ':1,
+                      '100':1}
 
 war_buildings_of_interest = ['th',
                       'eagle', 
@@ -119,7 +126,6 @@ any_buildings_of_interest = ['gold_mine',
                             'scatter',
                             'champ']
 
-yolov5 = Yolov5('clash_weights/best.pt', img_size=800, device='0', conf_thres=0.7, colors=clash_colors)
 
 class UPLOAD(Resource):
     def get(self):
@@ -133,12 +139,24 @@ class UPLOAD(Resource):
                 try:
                     encoded_string = content["encoded_string"]
 
-                    image_bytes = base64.b64decode(str(encoded_string))
-                    img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), -1)[:,:,:3]
+                    key = random.getrandbits(128)
+                    redisClient.rpush('img_list', json.dumps({f'{key}':encoded_string}))
 
-                    detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
+                    detection_resp = None
+                    time.sleep(0.1)
+                    while detection_resp == None:
+                        detection_resp = redisClient.get(f'{key}')
+                        time.sleep(0.1)
+                    
+                    detection_payload = json.loads(detection_resp.decode('utf8'))
+                    if detection_payload['status'] == 'success':
 
-                    return make_response(jsonify({"img_objects": detections}), 200)
+                        detections = detection_payload['detections']
+
+                        return make_response(jsonify({"img_objects": detections}), 200)
+                    else:
+                        return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
+
                 except Exception as e:
                     print(e)
                     return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
@@ -158,19 +176,24 @@ class BURNTBASE(Resource):
                 try:
                     encoded_string = content["encoded_string"]
 
-                    image_bytes = base64.b64decode(str(encoded_string))
-                    img_from_buf = np.frombuffer(image_bytes, np.uint8)
-                    img_np = cv2.imdecode(img_from_buf, 1)[:,:,:3]
-                    #cv2.imwrite(f'F:/yolov5/data/burntbase/{time.time()}.jpg', img_np)
-                    #cv2.imwrite(f'/home/marcnano/clash_yolo/data/burntbase/{time.time()}.jpg', img_np)
+                    key = random.getrandbits(128)
+                    redisClient.rpush('img_list', json.dumps({f'{key}':encoded_string}))
 
-                    detections = yolov5.predict(img_np, max_objects=max_per_class_dict)
+                    detection_resp = None
+                    time.sleep(0.1)
+                    while detection_resp == None:
+                        detection_resp = redisClient.get(f'{key}')
+                        time.sleep(0.1)
+                    
+                    detection_payload = json.loads(detection_resp.decode('utf8'))
+                    if detection_payload['status'] == 'success':
 
-                    height, width, _ = img_np.shape
+                        detections = detection_payload['detections']
+                        resp = img_objects_to_formated_json(detections, detection_payload['width'], detection_payload['height'])
 
-                    resp = img_objects_to_formated_json(detections, width, height)
-
-                    return make_response(jsonify(resp), 200)
+                        return make_response(jsonify(resp), 200)
+                    else:
+                        return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
                 except Exception as e:
                     print(e)
                     return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
@@ -230,9 +253,13 @@ def process_video_from_path(url):
     seconds = 1
     fps = vidcap.get(cv2.CAP_PROP_FPS) # Gets the frames per second
     multiplier = fps * seconds
+    half_additionner = round((multiplier/2) * seconds)
 
     timestamp = 0
+    perfected = 0
+    moy = 1
     wanted_frame = round(multiplier * timestamp)
+    wanted_half_frame = round(wanted_frame - half_additionner)
     data = []
     img_dict={}
     while success:
@@ -240,9 +267,20 @@ def process_video_from_path(url):
         frameId = int(round(vidcap.get(1))) #current frame number, rounded b/c sometimes you get frame intervals which aren't integers...this adds a little imprecision but is likely good enough
         success, image = vidcap.read()
 
+        if frameId == wanted_half_frame+1 and moy < 0.15:
+            try:
+                detections = yolov5.predict(image, max_objects=max_per_class_dict)
+            except Exception:
+                detections = []
+            if detections:
+                for obj in detections:
+                    if obj['name'] == '100':
+                        perfected = 1
+
         if frameId == wanted_frame+1:
             war_buildings_of_interest_current_count = 0
             any_buildings_of_interest_current_count = 0
+            
             try:
                 detections = yolov5.predict(image, max_objects=max_per_class_dict)
             except Exception:
@@ -253,26 +291,43 @@ def process_video_from_path(url):
                         war_buildings_of_interest_current_count += 1
                     if obj['name'] in any_buildings_of_interest:
                         any_buildings_of_interest_current_count += 1
-            print(f'{timestamp}s ', round(war_buildings_of_interest_current_count/27, 3), '    ', round(any_buildings_of_interest_current_count/74, 3))
+                    if obj['name'] == '100':
+                        perfected = 1
+                        if len(detections) != 1:
+                            cv2.imwrite(f'F:/yolov5/data/new/{time.time()}.jpg', image)
+            print(f'{timestamp}s ', round(war_buildings_of_interest_current_count/27, 3), '    ', round(any_buildings_of_interest_current_count/74, 3), '    ', perfected)
             moy = ((war_buildings_of_interest_current_count/27 + any_buildings_of_interest_current_count/74)/2) * (100_000+timestamp)/100_000
             if moy > 0.8:
                 img_dict[str(int(timestamp))] = image
 
             data.append({'second':int(timestamp),
                         'war_build_perct':round(war_buildings_of_interest_current_count/27, 3),
-                        'any_build_perct':round(any_buildings_of_interest_current_count/74, 3)
+                        'any_build_perct':round(any_buildings_of_interest_current_count/74, 3),
+                        'perfect':perfected
                         }, )
             timestamp += 1
             wanted_frame = round(multiplier * timestamp)
+            wanted_half_frame = round(wanted_frame - half_additionner)
+
+            perfected = 0
 
     vidcap.release()
-    df = pd.DataFrame(data, columns=['second', 'war_build_perct', 'any_build_perct'])
+    df = pd.DataFrame(data, columns=['second', 'war_build_perct', 'any_build_perct', 'perfect'])
 
     high_moy = []
     what_to_return = []
+    ok_6_8 = False
+    ok_3_6 = False
+    ok_1_3 = False
+    reset_trigger = False
+    perfect_trigger = False
     for row in df.values:
         moy = ((row[1]+row[2])/2) * (100_000+row[0])/100_000
         if moy > 0.8:
+            if ok_6_8 and ok_3_6 and ok_1_3:
+                high_moy = []
+            if reset_trigger:
+                reset_trigger = False
             high_moy.append((int(row[0]), moy))
             ok_6_8 = False
             ok_3_6 = False
@@ -283,7 +338,11 @@ def process_video_from_path(url):
             ok_3_6 = True
         if 0.1 < moy < 0.3:
             ok_1_3 = True
-        if moy < 0.07 and len(high_moy) > 0:
+        if moy < 0.1:
+            reset_trigger = True
+        if row[3] == 1:
+            perfect_trigger = True
+        if perfect_trigger and len(high_moy) > 0:
             if ok_6_8 and ok_3_6 and ok_1_3:
                 max_tup = max(high_moy, key=lambda x:x[1])
                 name = '--%02d--%02d--%02d' % (int(max_tup[0]//3600), int(max_tup[0]//60)-int(max_tup[0]//3600)*60, int(max_tup[0]%60))
@@ -296,8 +355,6 @@ def process_video_from_path(url):
                     interesting["frame_url"] = s3_file_name
                     what_to_return.append(interesting)
                     
-                    #cv2.imwrite(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg', img_dict[str(max_tup[0])])
-                    
                 except KeyError:
                     print(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg')
                 high_moy = []
@@ -309,6 +366,7 @@ def process_video_from_path(url):
                 ok_6_8 = False
                 ok_3_6 = False
                 ok_1_3 = False
+                perfect_trigger = False
 
     try:
         os.remove('F:/yolov5/current.mp4')
