@@ -156,7 +156,7 @@ class Yolov5():
             img_to_send = []
             for img in img_s:
                 img_to_send.append(self.reshape_copy_img(img))
-            img_to_send = np.array(img_to_send)
+            img_to_send = self.pad_batch_of_images(img_to_send)
         elif isinstance(img_s, np.ndarray):
             img_to_send = self.reshape_copy_img(img_s)
         else:
@@ -166,6 +166,33 @@ class Yolov5():
         img_to_send = self.send_to_device(img_to_send)
 
         return img_to_send
+
+    def pad_batch_of_images(self, img_list, return_np=True):
+        max_height = 0
+        max_width = 0
+        padded_img_list = []
+        for img in img_list:
+            _, height, width = img.shape
+            if max_height < height:
+                max_height = height
+            if max_width < width:
+                max_width = width
+
+        for img in img_list:
+            padded_img = np.full((max_height, max_width, 3), (114, 114, 114), dtype=np.uint8)
+            padded_img = padded_img.transpose(2, 0, 1)
+
+            _, height, width = img.shape
+            offset_width = (max_width - width) // 2
+            offset_height = (max_height - height) // 2
+
+            padded_img[:, offset_height:offset_height+height, offset_width:offset_width+width] = img
+            padded_img_list.append(padded_img)
+        
+        if return_np:
+            return np.array(padded_img_list)
+        else:
+            return padded_img_list
 
 
     def min_max_list(self, det):
