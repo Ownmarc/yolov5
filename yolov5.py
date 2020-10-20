@@ -101,8 +101,10 @@ class Yolov5():
             preds = non_max_suppression(inf_out, conf_thres=self.conf_thres, iou_thres=self.iou_thres)
 
         batch_output = []
-        for pred in preds:
-            min_max_list = self.min_max_list(pred)
+        for det, img0, img in zip(preds, img0s, imgs):
+            if det is not None and len(det):
+                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img0.shape).round()
+            min_max_list = self.min_max_list(det)
             if min_max_list != None:
                 min_max_list = self.max_objects_filter(min_max_list, max_objects, by='name')
 
