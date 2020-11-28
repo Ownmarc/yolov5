@@ -46,12 +46,13 @@ try:
     import pandas as pd
     import cv2
     from yolov5 import Yolov5
+    from shutil import rmtree
 
     s3 = boto3.client('s3',
     aws_access_key_id=s3_creds["aws_access_key_id"],
     aws_secret_access_key=s3_creds["aws_secret_access_key"])
 
-    weights_path = 'runs/exp33/weights/best.pt'
+    weights_path = 'clash_weights/best.pt'
 
     yolov5 = Yolov5(weights_path, img_size=800, device='0', conf_thres=0.7, colors=clash_colors)
 
@@ -181,9 +182,11 @@ class BURNTBASE(Resource):
 
                     detection_resp = None
                     time.sleep(0.1)
-                    while detection_resp == None:
+                    _timeout_count = 0
+                    while detection_resp == None and _timeout_count < 300:
                         detection_resp = redisClient.get(f'{key}')
                         time.sleep(0.1)
+                        _timeout_count += 1
                     
                     detection_payload = json.loads(detection_resp.decode('utf8'))
                     if detection_payload['status'] == 'success':
@@ -214,170 +217,184 @@ class VIDSCAN(Resource):
                 try:
                     youtube_url = content["youtube_url"]
 
-                    resp = process_video_from_path(youtube_url)
+                    random_dir = random.getrandbits(32)
+                    os.mkdir(f"vid_download/{random_dir}")
 
-                    return make_response(jsonify(resp), 200)
+                    resp = process_video_from_path(youtube_url, random_dir)
+
+                    print('resp: ', resp)
+
+                    api_response = make_response(jsonify(resp), 200)
                 except Exception as e:
                     print(e)
+                    api_response = make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
+                
+                finally:
                     try:
-                        os.remove('F:/yolov5/current.mp4')
-                    except:
-                        pass
-                    try:
-                        os.remove('F:/yolov5/current.part')
-                    except:
+                        rmtree(f"vid_download/{random_dir}")
+                    except FileNotFoundError:
                         pass
 
-                    return make_response(jsonify({"message": "ERROR: Can't process data"}), 422)
+                    return api_response
+
             else:
                 return make_response(jsonify({"message": "ERROR: Invalid POST request"}), 400)
 
         else:
             return make_response(jsonify({"message": "Unauthorized"}), 401)
 
-def process_video_from_path(url):
-    filename = 'F:/yolov5/current.mp4'
+def process_video_from_path(url, random_dir):
+    filename = f'vid_download/{random_dir}/%(id)s.%(ext)s'
     
     ydl_opts = {
         "cookiefile":"cookies.txt",
-        'outtmpl': filename
+        'outtmpl': filename,
+        "format": "best[height<=720][ext=mp4]/best[height<=720]/best"
     }
     
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+        dl_result = ydl.download([url])
 
-    videoFile = filename
-    vidcap = cv2.VideoCapture(videoFile)
-    success,image = vidcap.read()
-
-    seconds = 1
-    fps = vidcap.get(cv2.CAP_PROP_FPS) # Gets the frames per second
-    multiplier = fps * seconds
-    half_additionner = round((multiplier/2) * seconds)
-
-    timestamp = 0
-    perfected = 0
-    moy = 1
-    wanted_frame = round(multiplier * timestamp)
-    wanted_half_frame = round(wanted_frame - half_additionner)
-    data = []
-    img_dict={}
-    while success:
-
-        frameId = int(round(vidcap.get(1))) #current frame number, rounded b/c sometimes you get frame intervals which aren't integers...this adds a little imprecision but is likely good enough
+    for each_file in os.listdir(f'vid_download/{random_dir}'):
+        videoFile = f'vid_download/{random_dir}/{each_file}'
+        vidcap = cv2.VideoCapture(videoFile)
         success, image = vidcap.read()
+        if success:
+            break
 
-        if frameId == wanted_half_frame+1 and moy < 0.15:
-            try:
-                detections = yolov5.predict(image, max_objects=max_per_class_dict)
-            except Exception:
-                detections = []
-            if detections:
-                for obj in detections:
-                    if obj['name'] == '100':
-                        perfected = 1
-
-        if frameId == wanted_frame+1:
-            war_buildings_of_interest_current_count = 0
-            any_buildings_of_interest_current_count = 0
-            
-            try:
-                detections = yolov5.predict(image, max_objects=max_per_class_dict)
-            except Exception:
-                detections = []
-            if detections:
-                for obj in detections:
-                    if obj['name'] in war_buildings_of_interest:
-                        war_buildings_of_interest_current_count += 1
-                    if obj['name'] in any_buildings_of_interest:
-                        any_buildings_of_interest_current_count += 1
-                    if obj['name'] == '100':
-                        perfected = 1
-                        if len(detections) != 1:
-                            cv2.imwrite(f'F:/yolov5/data/new/{time.time()}.jpg', image)
-            print(f'{timestamp}s ', round(war_buildings_of_interest_current_count/27, 3), '    ', round(any_buildings_of_interest_current_count/74, 3), '    ', perfected)
-            moy = ((war_buildings_of_interest_current_count/27 + any_buildings_of_interest_current_count/74)/2) * (100_000+timestamp)/100_000
-            if moy > 0.8:
-                img_dict[str(int(timestamp))] = image
-
-            data.append({'second':int(timestamp),
-                        'war_build_perct':round(war_buildings_of_interest_current_count/27, 3),
-                        'any_build_perct':round(any_buildings_of_interest_current_count/74, 3),
-                        'perfect':perfected
-                        }, )
-            timestamp += 1
-            wanted_frame = round(multiplier * timestamp)
-            wanted_half_frame = round(wanted_frame - half_additionner)
-
-            perfected = 0
-
-    vidcap.release()
-    df = pd.DataFrame(data, columns=['second', 'war_build_perct', 'any_build_perct', 'perfect'])
-
-    high_moy = []
     what_to_return = []
-    ok_6_8 = False
-    ok_3_6 = False
-    ok_1_3 = False
-    reset_trigger = False
-    perfect_trigger = False
-    for row in df.values:
-        moy = ((row[1]+row[2])/2) * (100_000+row[0])/100_000
-        if moy > 0.8:
-            if ok_6_8 and ok_3_6 and ok_1_3:
-                high_moy = []
-            if reset_trigger:
-                reset_trigger = False
-            high_moy.append((int(row[0]), moy))
-            ok_6_8 = False
-            ok_3_6 = False
-            ok_1_3 = False
-        if 0.6 < moy < 0.8:
-            ok_6_8 = True
-        if 0.3 < moy < 0.6:
-            ok_3_6 = True
-        if 0.1 < moy < 0.3:
-            ok_1_3 = True
-        if moy < 0.1:
-            reset_trigger = True
-        if row[3] == 1:
-            perfect_trigger = True
-        if perfect_trigger and len(high_moy) > 0:
-            if ok_6_8 and ok_3_6 and ok_1_3:
-                max_tup = max(high_moy, key=lambda x:x[1])
-                name = '--%02d--%02d--%02d' % (int(max_tup[0]//3600), int(max_tup[0]//60)-int(max_tup[0]//3600)*60, int(max_tup[0]%60))
-                name = name.replace('--', '%')
-                try:
-                    s3_file_name = image_to_s3(img_dict[str(max_tup[0])])
-                    interesting = {}
-                    interesting['timestamp_sec'] = max_tup[0]
-                    interesting['is_triple'] = True
-                    interesting["frame_url"] = s3_file_name
-                    what_to_return.append(interesting)
-                    
-                except KeyError:
-                    print(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg')
-                high_moy = []
-                ok_6_8 = False
-                ok_3_6 = False
-                ok_1_3 = False
-            else:
-                high_moy = []
-                ok_6_8 = False
-                ok_3_6 = False
-                ok_1_3 = False
-                perfect_trigger = False
+    if success:
 
-    try:
-        os.remove('F:/yolov5/current.mp4')
-    except:
-        pass
+        seconds = 1
+        fps = vidcap.get(cv2.CAP_PROP_FPS) # Gets the frames per second
+        multiplier = fps * seconds
+        half_additionner = round((multiplier/2) * seconds)
+
+        timestamp = 0
+        perfected = 0
+        moy = 1
+        wanted_frame = round(multiplier * timestamp)
+        wanted_half_frame = round(wanted_frame - half_additionner)
+        data = []
+        img_dict={}
+        img_end_dict={}
+        while success:
+
+            frameId = int(round(vidcap.get(1))) #current frame number, rounded b/c sometimes you get frame intervals which aren't integers...this adds a little imprecision but is likely good enough
+            success, image = vidcap.read()
+
+            if success:
+                if frameId == wanted_half_frame+1 and moy < 0.15:
+                    try:
+                        detections = yolov5.predict(image, max_objects=max_per_class_dict)
+                    except Exception:
+                        detections = []
+                    if detections:
+                        for obj in detections:
+                            if obj['name'] == '100':
+                                perfected = 1
+                                img_end_dict[str(int(timestamp))] = image
+
+                if frameId == wanted_frame+1:
+                    war_buildings_of_interest_current_count = 0
+                    any_buildings_of_interest_current_count = 0
+                    
+                    try:
+                        detections = yolov5.predict(image, max_objects=max_per_class_dict)
+                    except Exception:
+                        detections = []
+                    if detections:
+                        for obj in detections:
+                            if obj['name'] in war_buildings_of_interest:
+                                war_buildings_of_interest_current_count += 1
+                            if obj['name'] in any_buildings_of_interest:
+                                any_buildings_of_interest_current_count += 1
+                            if obj['name'] == '100':
+                                perfected = 1
+                                img_end_dict[str(int(timestamp))] = image
+                                if len(detections) != 1:
+                                    cv2.imwrite(f'F:/yolov5/data/new/{time.time()}.jpg', image)
+                    print(f'{timestamp}s ', round(war_buildings_of_interest_current_count/27, 3), '    ', round(any_buildings_of_interest_current_count/74, 3), '    ', perfected)
+                    moy = ((war_buildings_of_interest_current_count/27 + any_buildings_of_interest_current_count/74)/2) * (100_000+timestamp)/100_000
+                    if moy > 0.8:
+                        img_dict[str(int(timestamp))] = image
+
+                    data.append({'second':int(timestamp),
+                                'war_build_perct':round(war_buildings_of_interest_current_count/27, 3),
+                                'any_build_perct':round(any_buildings_of_interest_current_count/74, 3),
+                                'perfect':perfected
+                                }, )
+                    timestamp += 1
+                    wanted_frame = round(multiplier * timestamp)
+                    wanted_half_frame = round(wanted_frame - half_additionner)
+
+                    perfected = 0
+            else:
+                vidcap.release()
+                
+        df = pd.DataFrame(data, columns=['second', 'war_build_perct', 'any_build_perct', 'perfect'])
+
+        high_moy = []
+        ok_6_8 = False
+        ok_3_6 = False
+        ok_1_3 = False
+        reset_trigger = False
+        perfect_trigger = False
+        for row in df.values:
+            moy = ((row[1]+row[2])/2) * (100_000+row[0])/100_000
+            if moy > 0.8:
+                if ok_6_8 and ok_3_6 and ok_1_3:
+                    high_moy = []
+                if reset_trigger:
+                    high_moy = []
+                    reset_trigger = False
+                high_moy.append((int(row[0]), moy))
+                ok_6_8 = False
+                ok_3_6 = False
+                ok_1_3 = False
+            if 0.6 < moy < 0.8:
+                ok_6_8 = True
+            if 0.3 < moy < 0.6:
+                ok_3_6 = True
+            if 0.1 < moy < 0.3:
+                ok_1_3 = True
+            if moy < 0.1:
+                reset_trigger = True
+            if row[3] == 1:
+                perfect_trigger = True
+            if perfect_trigger and len(high_moy) > 0:
+                if ok_6_8 and ok_3_6 and ok_1_3:
+                    max_tup = max(high_moy, key=lambda x:x[1])
+                    name = '--%02d--%02d--%02d' % (int(max_tup[0]//3600), int(max_tup[0]//60)-int(max_tup[0]//3600)*60, int(max_tup[0]%60))
+                    name = name.replace('--', '%')
+                    try:
+                        s3_file_name = image_to_s3(img=img_dict[str(max_tup[0])], img_end=img_end_dict[str(int(row[0]))])
+                        interesting = {}
+                        interesting['timestamp_sec'] = max_tup[0]
+                        interesting['is_triple'] = True
+                        interesting["frame_url"] = s3_file_name
+                        what_to_return.append(interesting)
+                        
+                    except KeyError as e:
+                        print(f'url_api/{videoFile.replace(".mp4", "")}{name}.jpg')
+
+                    high_moy = []
+                    ok_6_8 = False
+                    ok_3_6 = False
+                    ok_1_3 = False
+                else:
+                    high_moy = []
+                    ok_6_8 = False
+                    ok_3_6 = False
+                    ok_1_3 = False
+                    perfect_trigger = False
                 
     return what_to_return
 
-def image_to_s3(img, filename=None, bucket_name="images.burntbase.com", key_prefix="img/marc"):
+def image_to_s3(img, img_end, filename=None, bucket_name="images.burntbase.com", key_prefix="img/marc"):
     if filename==None:
         filename = f"videocapture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+
     aws_filename = f"{key_prefix}/{filename}"
     _, buffer = cv2.imencode(".jpg", img)
     io_buf = BytesIO(buffer)
@@ -385,6 +402,15 @@ def image_to_s3(img, filename=None, bucket_name="images.burntbase.com", key_pref
         Fileobj=io_buf, 
         Bucket=bucket_name, 
         Key=aws_filename,
+        ExtraArgs={'ACL':'public-read'})
+
+    aws_end_filename = f"{key_prefix}_end/{filename}"
+    _, end_buffer = cv2.imencode(".jpg", img_end)
+    io_end_buf = BytesIO(end_buffer)
+    s3.upload_fileobj(
+        Fileobj=io_end_buf,
+        Bucket=bucket_name,
+        Key=aws_end_filename,
         ExtraArgs={'ACL':'public-read'})
     
     frame_s3_url = f'https://s3.amazonaws.com/{bucket_name}/{key_prefix}/{filename}'
