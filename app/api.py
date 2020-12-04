@@ -430,19 +430,23 @@ def img_objects_to_formated_json(img_objects, img_width, img_height):
                 'air_def':0, 'scatter':0, 'th':0,
                 'wiz_tower': 0, 'xbow': 0, 'champ': 0,
                 'warden': 0}
+    
+    building_of_interest_burntbase = ['eagle', 'inferno', 'air_def', 
+                                    'scatter', 'th', 'wiz_tower', 'xbow']
 
     for obj in img_objects:
         if obj['name'] in th_level_dict:
             th_level_dict[obj['name']] += 1
 
-            if xmin > (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2:
-                xmin = (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2
-            if xmax < (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2:
-                xmax = (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2
-            if ymin > (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2:
-                ymin = (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2
-            if ymax < (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2:
-                ymax = (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2
+            if obj['name'] in building_of_interest_burntbase:
+                if xmin > (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2:
+                    xmin = (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2
+                if xmax < (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2:
+                    xmax = (obj['bndbox']['xmin'] + obj['bndbox']['xmax'])/2
+                if ymin > (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2:
+                    ymin = (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2
+                if ymax < (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2:
+                    ymax = (obj['bndbox']['ymin'] + obj['bndbox']['ymax'])/2
             
 
     if th_level_dict['scatter'] >= 1 or th_level_dict['champ'] == 1:
@@ -458,8 +462,6 @@ def img_objects_to_formated_json(img_objects, img_width, img_height):
         print('Not able to infer th level of file ')
         print(th_level_dict)
 
-    xcenter = (xmin + xmax) / 2
-    ycenter = (ymin + ymax) / 2
     base_width = xmax - xmin
     base_height = ymax - ymin
 
